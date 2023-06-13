@@ -40,7 +40,7 @@ struct sockaddr_in {
 #define SERVER_IP "127.0.0.1"
 #define SERVER_PORT 1337
 
-#define SERIAL_DEVICE "/dev/ttyACM0"
+#define SERIAL_DEVICE "/dev/serial0"
 
 #define WIDTH 112
 #define HEIGHT 16
