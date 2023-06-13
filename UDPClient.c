@@ -2,9 +2,10 @@
 // Written for COMP3331 by Andrew Bennett, October 2019.
 
 #include <arpa/inet.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
+#include <time.h>
 
 /*
 
@@ -27,27 +28,20 @@ struct sockaddr_in {
 */
 
 #define SERVER_IP "127.0.0.1"
-#define SERVER_PORT 12000
+#define SERVER_PORT 1337
 
-#define BUF_LEN 2048
-
-// Get the "name" (IP address) of who we're communicating with.
-char *get_name(struct sockaddr_in *sa, char *name);
+#define WIDTH 112
+#define HEIGHT 16
 
 // Populate a sockaddr_in struct with the specified IP / port to connect to.
 void fill_sockaddr(struct sockaddr_in *sa, char *ip, int port);
 
-// A wrapper function for fgets, similar to Python's built-in 'input' function.
-void get_input(char *buf, char *msg);
-
-
 int main(int argc, char *argv[]) {
+    // Seed the random generator.
+    srand((unsigned) time(NULL));
 
     // Array that we'll use to store the data we're sending / receiving.
-    char buf[BUF_LEN] = {0};
-
-    // Temporary array used to store the name of the client when printing.
-    char name[BUF_LEN] = {0};
+    char buf[2] = {0, 0};
 
     // Create the client's socket.
     //
@@ -62,89 +56,31 @@ int main(int argc, char *argv[]) {
     // recvfrom functions later.
     int sock_fd = socket(AF_INET, SOCK_DGRAM, 0);
 
-    // A wrapper function for fgets, similar to Python's built-in
-    // 'input' function.
-    get_input(buf, "Please type 'Subscribe'\n");
-
     // Create the sockaddr that the client will use to send data to the
     // server.
     struct sockaddr_in sockaddr_to;
     fill_sockaddr(&sockaddr_to, SERVER_IP, SERVER_PORT);
 
-    // Now that we have a socket and a message, we send the message
+    // Now that we have a socket and a message, we send the messages
     // through the socket to the server.
-    //
-    // Note the difference between UDP sendto() and TCP send() calls.
-    // In TCP we do not need to attach the destination address to the
-    // packet, while in UDP we explicilty specify the destination
-    // address + port number for each message.
-    int numbytes = sendto(sock_fd, buf, strlen(buf), 0,
-            (struct sockaddr *) &sockaddr_to, sizeof(sockaddr_to));
-
-    printf("Sent %d bytes to %s:%d\n", numbytes,
-            get_name(&sockaddr_to, name),
-            ntohs(sockaddr_to.sin_port));
-
-
-    // Create the sockaddr that the client will use to receive data from
-    // the server.
-    struct sockaddr_in sockaddr_from;
-
-    // We need to create a variable to store the length of the sockaddr
-    // we're using here, which the recvfrom function can update if it
-    // stores a different amount of information in the sockaddr.
-    socklen_t from_len = sizeof(sockaddr_from);
-
-    // Wait for the reply from the server.
-    numbytes = recvfrom(sock_fd, buf, BUF_LEN, 0,
-        (struct sockaddr *) &sockaddr_from, &from_len);
-
-    // Null-terminate the result, and remove the newline (if present).
-    buf[numbytes] = '\0';
-    buf[strcspn(buf, "\n")] = '\0';
-
-    printf("Received %d bytes from %s:%d: %s\n", numbytes,
-            get_name(&sockaddr_from, name),
-            ntohs(sockaddr_from.sin_port), buf);
-
-    // Remember: strcmp returns 0 if the strings match.
-    if (!strcmp(buf, "Subscription successful")) {
-        // Receive 10 messages back-to-back from the server.
-        for (int i = 0; i < 10; i++) {
-            printf("Waiting for message...\n");
-
-            numbytes = recvfrom(sock_fd, buf, BUF_LEN, 0,
-                (struct sockaddr *) &sockaddr_from, &from_len);
-
-            buf[numbytes] = '\0';
-            buf[strcspn(buf, "\n")] = '\0';
-
-            printf("Received %d bytes from %s: %s\n", numbytes,
-                    get_name(&sockaddr_from, name), buf);
+    int num_bytes = 0;
+    int num_packages = 0;
+    for(unsigned int row=0; row<HEIGHT; row++) {
+        for(unsigned int column=0; column<WIDTH; column++) {
+            int polarity = rand() & 1;
+            buf[0] = (1 << 7) | (column & 0x7F);
+            buf[1] = polarity << 4 | (row & 0x0F);
+            num_bytes += sendto(sock_fd, buf, 2, 0,
+                    (struct sockaddr *) &sockaddr_to, sizeof(sockaddr_to));
+            num_packages++;
+            printf(polarity ? "*": " ");
         }
+        printf("\n");
     }
 
-    // Prepare to exit -- send the Unsubscribe message to the server.
-    strcpy(buf, "Unsubscribe");
-    numbytes = sendto(sock_fd, buf, strlen(buf), 0,
-            (struct sockaddr *) &sockaddr_to, sizeof(sockaddr_to));
-
-    printf("Sent %d bytes to %s:%d\n", numbytes,
-            get_name(&sockaddr_to, name),
-            ntohs(sockaddr_to.sin_port));
-
-    close(sock_fd);
+    printf("Sent %d bytes in %d packages\n", num_bytes, num_packages);
 
     return 0;
-}
-
-
-// Wrapper function for fgets, similar to Python's built-in 'input'
-// function.
-void get_input(char *buf, char *msg) {
-    printf("%s", msg);
-    fgets(buf, BUF_LEN, stdin);
-    buf[strcspn(buf, "\n")] = '\0'; // Remove the newline
 }
 
 // Populate a `sockaddr_in` struct with the IP / port to connect to.
@@ -161,10 +97,4 @@ void fill_sockaddr(struct sockaddr_in *sa, char *ip, int port) {
     // big endian, also known as "network byte order".
     sa->sin_port = htons(port);
     inet_pton(AF_INET, ip, &(sa->sin_addr));
-}
-
-// Get the "name" (IP address) of who we're communicating with.
-char *get_name(struct sockaddr_in *sa, char *name) {
-    inet_ntop(sa->sin_family, &(sa->sin_addr), name, BUF_LEN);
-    return name;
 }
